@@ -4,7 +4,7 @@ from datetime import datetime
 from flask_jwt_extended import jwt_required
 from app.decorators import role_required
 from app.enums import PaymentEnum, UserRole
-from app.models import Rental, db, Customer  # Adjust import based on your project structure
+from app.models import Rental, db, Customer
 
 customers_bp = Blueprint('customers', __name__)
 
@@ -258,9 +258,8 @@ def update_customer(id):
         }
     }), 200
 
-#todo: handle when a rental order invoke the chosen customer
 @customers_bp.route('/<int:id>', methods=['DELETE'])
-@role_required(UserRole.MANAGER) # Recommended: only high roles delete customers
+@role_required(UserRole.MANAGER)
 def delete_customer(id):
     """
     Delete a customer (Manager only)

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, request, jsonify
-from flask_jwt_extended import current_user, get_current_user, jwt_required
+from flask_jwt_extended import get_current_user, jwt_required
 from sqlalchemy import or_
 from app import db
 from app.decorators import role_required
