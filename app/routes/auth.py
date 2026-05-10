@@ -294,6 +294,7 @@ def get_current_user_info():
             'id': user.id,
             'name': user.name,
             'email': user.email,
+            'phone': user.phone,
             'role': user.role.value if hasattr(user.role, 'value') else user.role
         }
     }), 200

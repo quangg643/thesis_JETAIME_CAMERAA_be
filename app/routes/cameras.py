@@ -328,6 +328,8 @@ def get_all_cameras():
     try:
         status_str = request.args.get('status')
         product_id = request.args.get('product_id')
+        search_query = request.args.get('product_name')
+        identifier = request.args.get('identifier')
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
 
@@ -346,6 +348,14 @@ def get_all_cameras():
             if not product_id.isdigit():
                 return jsonify({"success": False, "error": "product_id must be an integer"}), 400
             query = query.filter(Camera.product_id == int(product_id))
+        if search_query:
+            query = query.filter(
+                (Product.name.ilike(f'%{search_query}%')) | 
+                (Camera.identifier.ilike(f'%{search_query}%'))
+            )
+        
+        if identifier:
+            query = query.filter(Camera.identifier.ilike(f'%{identifier}%'))
 
         # error_out=False means if the user asks for page 100 and there are only 2, return empty list
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
