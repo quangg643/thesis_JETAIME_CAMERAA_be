@@ -3,11 +3,11 @@ import math
 from flask import Blueprint, request, jsonify
 from datetime import date, datetime
 
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt_identity, jwt_required
 from app.decorators import role_required
 from app.enums import CameraStatus, PaymentEnum, RentalStatus, UserRole
 from app.helpers import calculate_initial_fee, get_vietnam_time
-from app.models import  Kpi,  Shift, ShiftAssigned, db, Rental, Camera, Customer
+from app.models import  Kpi, Product,  Shift, ShiftAssigned, db, Rental, Camera, Customer
 
 rental_bp = Blueprint('rentals', __name__)
 
@@ -15,9 +15,108 @@ vn_now = get_vietnam_time()
 current_time = vn_now.time()
 today_date = vn_now.date()
 
-#create API to get the rental filtered by the data (status for each STAFF_ON, STAFF_OFF)
 
-@rental_bp.route('/', methods=['POST'])
+@rental_bp.route('/', methods=['GET'])
+@jwt_required()
+def get_rentals():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    search_query = request.args.get('search')
+
+    status_filter = request.args.get('status')
+    camera_name_filter = request.args.get('camera')
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    # Join Rental -> Camera -> Product and Customer
+    query = Rental.query\
+        .join(Camera, Rental.camera_id == Camera.id)\
+        .join(Product, Camera.product_id == Product.id)\
+        .join(Customer, Rental.customer_id == Customer.id)
+
+    if search_query:
+        search_all = f"%{search_query}%"
+        query = query.filter(
+            (Customer.name.ilike(search_all)) | 
+            (Product.name.ilike(search_all)) |
+            (Camera.identifier.ilike(search_all))
+        )
+
+    if status_filter:
+        # Assumes status in DB is an Enum; .value might be needed depending on your model
+        query = query.filter(Rental.status == status_filter.lower())
+
+    if camera_name_filter:
+        # Filter by the Product name specifically
+        query = query.filter(Product.name == camera_name_filter)
+
+    # 5. Apply Date Range Filtering
+    if start_date_str:
+        try:
+            start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
+            query = query.filter(Rental.start_time >= start_dt)
+        except ValueError:
+            pass # Ignore invalid date formats
+
+    if end_date_str:
+        try:
+            # We add 23:59:59 to include the entire end day
+            end_dt = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            query = query.filter(Rental.start_time <= end_dt)
+        except ValueError:
+            pass
+
+    pagination = query.order_by(Rental.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    results = []
+
+    
+    for item in pagination.items:
+        # Business logic: Combine Product Name and Unit Identifier
+        delta = item.expected_return_time - item.start_time
+        total_seconds = int(delta.total_seconds())
+
+        days = total_seconds // 86400
+        hours = (total_seconds % 86400) // 3600
+        minutes = (total_seconds % 3600) // 60
+
+        # Build a readable string
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+
+        duration_display = " ".join(parts) if parts else "0m"
+
+        gear_display = f"{item.camera.product.name} ({item.camera.identifier})"
+        
+        results.append({
+            "id": item.id,
+            "date": item.start_time.strftime('%d/%m/%Y'),
+            "camera": gear_display,
+            "duration": duration_display,
+            "start_time": item.start_time,
+            "expected_return_time": item.expected_return_time,
+            "fee": item.total_amount,
+            "deposit_method": item.deposit_method,
+            "customer_name": item.customer.name,
+            "phone": item.customer.phone,
+            "status": item.status.value,
+            "notes": item.note
+        })
+
+    return jsonify({
+        "data": results,
+        "total": pagination.total,
+        "pages": pagination.pages
+    })
+
+@rental_bp.route('/create', methods=['POST'])
 @role_required(UserRole.STAFF_ON)
 def create_rental():
     """
