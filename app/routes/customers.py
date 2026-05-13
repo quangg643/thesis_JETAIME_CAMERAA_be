@@ -73,6 +73,7 @@ def get_all_customers():
         'name': c.name,
         'email': c.email,
         'phone': c.phone,
+        'gender': c.gender,
         'address': c.address,
         'created_at': c.created_at.isoformat() if c.created_at else None
     } for c in pagination.items]
@@ -165,6 +166,7 @@ def create_customer():
     new_customer = Customer(
         name=data['name'],
         email=data.get('email'),
+        gender=data.get('gender'),
         phone=data['phone'],
         address=data.get('address')
     )

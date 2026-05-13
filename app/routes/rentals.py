@@ -43,24 +43,20 @@ def get_rentals():
         )
 
     if status_filter:
-        # Assumes status in DB is an Enum; .value might be needed depending on your model
-        query = query.filter(Rental.status == status_filter.lower())
+        query = query.filter(Rental.order_status == status_filter.lower())
 
     if camera_name_filter:
-        # Filter by the Product name specifically
         query = query.filter(Product.name == camera_name_filter)
 
-    # 5. Apply Date Range Filtering
     if start_date_str:
         try:
             start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
             query = query.filter(Rental.start_time >= start_dt)
         except ValueError:
-            pass # Ignore invalid date formats
+            pass
 
     if end_date_str:
         try:
-            # We add 23:59:59 to include the entire end day
             end_dt = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
             query = query.filter(Rental.start_time <= end_dt)
         except ValueError:
@@ -74,7 +70,6 @@ def get_rentals():
 
     
     for item in pagination.items:
-        # Business logic: Combine Product Name and Unit Identifier
         delta = item.expected_return_time - item.start_time
         total_seconds = int(delta.total_seconds())
 
@@ -100,13 +95,13 @@ def get_rentals():
             "date": item.start_time.strftime('%d/%m/%Y'),
             "camera": gear_display,
             "duration": duration_display,
-            "start_time": item.start_time,
-            "expected_return_time": item.expected_return_time,
-            "fee": item.total_amount,
+            "start_time": item.start_time.isoformat(),
+            "expected_return_time": item.expected_return_time.isoformat(),
             "deposit_method": item.deposit_method,
             "customer_name": item.customer.name,
             "phone": item.customer.phone,
-            "status": item.status.value,
+            "order_status": item.order_status.value,
+            "payment_status": item.payment_status.value,
             "notes": item.note
         })
 
@@ -115,6 +110,60 @@ def get_rentals():
         "total": pagination.total,
         "pages": pagination.pages
     })
+
+@rental_bp.route('/<int:rental_id>', methods=['GET'])
+@jwt_required()
+def get_rental_by_id(rental_id):
+    item = Rental.query.options(
+        db.joinedload(Rental.pic_on),
+        db.joinedload(Rental.pic_off),
+        db.joinedload(Rental.customer)
+    ).get_or_404(rental_id)
+
+    delta = item.expected_return_time - item.start_time
+    total_seconds = int(delta.total_seconds())
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+    
+    parts = []
+    if days > 0: parts.append(f"{days}d")
+    if hours > 0: parts.append(f"{hours}h")
+    if minutes > 0: parts.append(f"{minutes}m")
+    duration_display = " ".join(parts) if parts else "0m"
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "id": item.id,
+            "date": item.start_time.strftime('%d/%m/%Y'),
+            "camera": f"{item.camera.product.name} ({item.camera.identifier})",
+            "camera_id": item.camera_id,
+            "duration": duration_display,
+            "start_time": item.start_time.isoformat(),
+            "expected_return_time": item.expected_return_time.isoformat(),
+            "deposit_method": item.deposit_method,
+            "status": item.order_status.value if hasattr(item.order_status, 'value') else item.status,
+
+            "customer_id": item.customer_id,
+            "customer_name": item.customer.name,
+            "phone": item.customer.phone,
+            "customer_email": item.customer.email or "",
+            "customer_address": item.customer.address or "",
+            "gender": item.customer.gender.value if item.customer.gender else "MALE",
+            "notes": item.note or "",
+
+            "pic_on_id": item.pic_on.id if item.pic_on else None,
+            "pic_on_name": item.pic_on.name if item.pic_on else "N/A",
+            "pic_on_email": item.pic_on.email if item.pic_on else "N/A",
+            "pic_on_phone": item.pic_on.phone if item.pic_on else "N/A",
+
+            "pic_off_id": item.pic_off.id if item.pic_off else None,
+            "pic_off_name": item.pic_off.name if item.pic_off else "N/A",
+            "pic_off_email": item.pic_off.email if item.pic_off else "N/A",
+            "pic_off_phone": item.pic_off.phone if item.pic_off else "N/A",
+        }
+    }), 200
 
 @rental_bp.route('/create', methods=['POST'])
 @role_required(UserRole.STAFF_ON)
@@ -160,7 +209,7 @@ def create_rental():
     data = request.get_json()
 
     required_fields = ['customer_id', 'camera_id', 
-                      'start_time', 'expected_return_time', 'deposit_amount', 'deposit_method']
+                      'start_time', 'expected_return_time', 'deposit_method']
     
     for field in required_fields:
         if field not in data:
@@ -195,15 +244,13 @@ def create_rental():
         new_rental = Rental(
             customer_id=data['customer_id'],
             camera_id=data['camera_id'],
-            employee_id=current_user_id,
+            pic_on_id=current_user_id,
             start_time=start_time,
             expected_return_time=expected_return_time,
             rental_fee=rental_fee,
-            deposit_amount=data['deposit_amount'],
             deposit_method=data['deposit_method'],
-            deposit_status='paid',
             payment_status=PaymentEnum.WAITING.value,
-            status="PENDING_PICKUP",
+            order_status=RentalStatus.PENDING_PICKUP.value,
             note=data['note']
         )
         
@@ -346,11 +393,13 @@ def handover_camera(rental_id):
     
     action = data.get('action') 
     camera = rental.camera
+    current_user_id = get_jwt_identity()
 
     try:
+        rental.pic_off_id = current_user_id
         if action == 'approve':
             camera.status = CameraStatus.RENTED
-            rental.status = RentalStatus.ACTIVE
+            rental.order_status = RentalStatus.ACTIVE
             msg = "Camera handed over successfully."
 
         elif action == 'fix':
@@ -366,7 +415,7 @@ def handover_camera(rental_id):
             
             rental.camera_id = new_camera.id
             new_camera.status = CameraStatus.RENTED
-            rental.status = RentalStatus.ACTIVE
+            rental.order_status = RentalStatus.ACTIVE
             msg = "Original camera moved to maintenance. Replacement issued."
         
         db.session.commit()
