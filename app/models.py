@@ -51,8 +51,15 @@ class Employee(db.Model):
     )
     handovers_completed = db.relationship(
         'Rental', 
-        foreign_keys='Rental.pic_off_id', 
-        back_populates='pic_off', 
+        foreign_keys='Rental.pic_off_handover_id', 
+        back_populates='pic_off_handover', 
+        lazy='select'
+    )
+
+    returns_completed = db.relationship(
+        'Rental', 
+        foreign_keys='Rental.pic_off_return_id', 
+        back_populates='pic_off_return', 
         lazy='select'
     )
 
@@ -105,17 +112,18 @@ class Rental(db.Model):
 
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
     camera_id = db.Column(db.Integer, db.ForeignKey('camera.id'), nullable=False)
-    pic_on_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
-    pic_off_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=True)
-
     
+    pic_on_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    pic_off_handover_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=True)
+    pic_off_return_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=True)
+
     start_time = db.Column(db.DateTime, nullable=False)
     expected_return_time = db.Column(db.DateTime, nullable=False)
     actual_return_date = db.Column(db.DateTime, nullable=True)
     
     rental_fee = db.Column(db.Integer)
     penalty_fee = db.Column(db.Integer, default=0)
-    total_amount = db.Column(db.Integer)
+    total_amount = db.Column(db.Integer, default=0)
     payment_status = db.Column(SQLEnum(PaymentEnum), nullable=False)
     
     deposit_method = db.Column(db.String(50))
@@ -128,8 +136,9 @@ class Rental(db.Model):
     created_at = db.Column(db.DateTime, default=get_vietnam_time)
 
     pic_on = db.relationship('Employee', foreign_keys=[pic_on_id], back_populates='rentals_created')
-    pic_off = db.relationship('Employee', foreign_keys=[pic_off_id], back_populates='handovers_completed')
-    
+    pic_off_handover = db.relationship('Employee', foreign_keys=[pic_off_handover_id], back_populates='handovers_completed')
+    pic_off_return = db.relationship('Employee', foreign_keys=[pic_off_return_id])
+
     customer = db.relationship('Customer', backref='rentals')
     camera = db.relationship('Camera', backref='rentals')
 class Shift(db.Model):

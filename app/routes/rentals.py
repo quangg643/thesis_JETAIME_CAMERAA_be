@@ -77,7 +77,6 @@ def get_rentals():
         hours = (total_seconds % 86400) // 3600
         minutes = (total_seconds % 3600) // 60
 
-        # Build a readable string
         parts = []
         if days > 0:
             parts.append(f"{days}d")
@@ -116,7 +115,8 @@ def get_rentals():
 def get_rental_by_id(rental_id):
     item = Rental.query.options(
         db.joinedload(Rental.pic_on),
-        db.joinedload(Rental.pic_off),
+        db.joinedload(Rental.pic_off_handover),
+        db.joinedload(Rental.pic_off_return),
         db.joinedload(Rental.customer)
     ).get_or_404(rental_id)
 
@@ -153,15 +153,26 @@ def get_rental_by_id(rental_id):
             "gender": item.customer.gender.value if item.customer.gender else "MALE",
             "notes": item.note or "",
 
+            "actual_return_date": item.actual_return_date or "",
+            "rental_fee": item.rental_fee or "",
+            "penalty_fee": item.penalty_fee or "",
+            "total_amount": item.total_amount or "",
+            "payment_status": item.payment_status or "",
+
             "pic_on_id": item.pic_on.id if item.pic_on else None,
             "pic_on_name": item.pic_on.name if item.pic_on else "N/A",
             "pic_on_email": item.pic_on.email if item.pic_on else "N/A",
             "pic_on_phone": item.pic_on.phone if item.pic_on else "N/A",
 
-            "pic_off_id": item.pic_off.id if item.pic_off else None,
-            "pic_off_name": item.pic_off.name if item.pic_off else "N/A",
-            "pic_off_email": item.pic_off.email if item.pic_off else "N/A",
-            "pic_off_phone": item.pic_off.phone if item.pic_off else "N/A",
+            "pic_off_id": item.pic_off_handover.id if item.pic_off_handover else None,
+            "pic_off_name": item.pic_off_handover.name if item.pic_off_handover else "N/A",
+            "pic_off_email": item.pic_off_handover.email if item.pic_off_handover else "N/A",
+            "pic_off_phone": item.pic_off_handover.phone if item.pic_off_handover else "N/A",
+
+            "pic_off_return_id": item.pic_off_return.id if item.pic_off_return else None,
+            "pic_off_return_name": item.pic_off_return.name if item.pic_off_return else "N/A",
+            "pic_off_return_email": item.pic_off_return.email if item.pic_off_return else "N/A",
+            "pic_off_return_phone": item.pic_off_return.phone if item.pic_off_return else "N/A",
         }
     }), 200
 
@@ -294,6 +305,45 @@ def create_rental():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Database error", "details": str(e)}), 500
+    
+@rental_bp.route('/<int:rental_id>', methods=['PUT'])
+@role_required(UserRole.STAFF_ON)
+def update_rental(rental_id):
+    rental = Rental.query.get_or_404(rental_id)
+    
+    if rental.order_status != RentalStatus.PENDING_PICKUP:
+        return jsonify({
+            "error": "Update forbidden", 
+            "details": f"Only rentals in 'PENDING_PICKUP' status can be modified. Current status: {rental.order_status.value}"
+        }), 400
+
+    data = request.get_json()
+    
+    try:
+        if 'deposit_method' in data:
+            rental.deposit_method = data['deposit_method']
+        if 'note' in data:
+            rental.note = data['note']
+            
+        # 2. Update Times & Recalculate Fee
+        if 'start_time' in data or 'expected_return_time' in data:
+            if 'start_time' in data:
+                rental.start_time = datetime.fromisoformat(data['start_time'].replace('Z', '+00:00'))
+            if 'expected_return_time' in data:
+                rental.expected_return_time = datetime.fromisoformat(data['expected_return_time'].replace('Z', '+00:00'))
+            
+            if rental.start_time >= rental.expected_return_time:
+                return jsonify({"error": "Return time must be after start time"}), 400
+                
+            duration = rental.expected_return_time - rental.start_time
+            rental.rental_fee = calculate_initial_fee(rental.camera.product, duration)
+
+        db.session.commit()
+        return jsonify({"success": True, "message": "Rental updated successfully"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Update failed", "details": str(e)}), 500
 
 @rental_bp.route('/<int:rental_id>/return', methods=['PUT'])
 @role_required(UserRole.STAFF_OFF)
@@ -326,12 +376,25 @@ def return_camera(rental_id):
         return jsonify({"error": "Already returned"}), 400
 
     vn_now = get_vietnam_time()
+    vn_now_naive = vn_now.replace(tzinfo=None)
     rental.actual_return_date = vn_now
+
+    rental.pic_off_return_id = get_jwt_identity()
     
     penalty_fee = 0
-    if vn_now > rental.expected_return_time:
+    hours_late = 0
 
-        overdue_duration = vn_now - rental.expected_return_time
+    if vn_now_naive < rental.expected_return_time:
+        actual_duration = vn_now_naive - rental.start_time
+        if actual_duration.total_seconds() < 0:
+            actual_duration = rental.expected_return_time - rental.start_time
+            
+        product = rental.camera.product
+        rental.rental_fee = calculate_initial_fee(product, actual_duration)
+
+    if vn_now_naive > rental.expected_return_time:
+
+        overdue_duration = vn_now_naive - rental.expected_return_time
         total_seconds_late = overdue_duration.total_seconds()
 
         hours_late = math.ceil(total_seconds_late / 3600)
@@ -339,88 +402,47 @@ def return_camera(rental_id):
         product = rental.camera.product
         penalty_fee = hours_late * product.additional_hour_price
 
+    rental.penalty_fee = penalty_fee
+    rental.total_amount = rental.rental_fee + penalty_fee
+    rental.camera.status = CameraStatus.AVAILABLE.value
+    rental.order_status = RentalStatus.COMPLETED.value
+    
+
     try:
-        rental.camera.status = CameraStatus.AVAILABLE.value
         db.session.commit()
             
         return jsonify({
-            "message": "Return processed",
-            "initial_fee": rental.rental_fee,
-            "late_hours": hours_late if penalty_fee > 0 else 0,
-            "penalty_fee": penalty_fee,
-            "total_final_amount": rental.rental_fee + penalty_fee
+            "success": True,
+            "message": "Return processed successfully",
+            "data": {
+                "rental_fee": rental.rental_fee,
+                "late_hours": hours_late,
+                "penalty_fee": penalty_fee,
+                "total_amount": rental.total_amount,
+                "actual_return_date": vn_now_naive.strftime('%Y-%m-%d %H:%M:%S'),
+                "pic_off_name": rental.pic_off_return.name if rental.pic_off_return else "N/A"
+            }
         }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     
-@rental_bp.route('/<int:rental_id>/handover', methods=['POST'])
+@rental_bp.route('/<int:rental_id>/handover', methods=['PUT'])
 @role_required(UserRole.STAFF_OFF)
 def handover_camera(rental_id):
-    """
-    Process physical camera handover to customer
-    ---
-    tags:
-      - Rentals
-    parameters:
-      - name: rental_id
-        in: path
-        type: integer
-        required: true
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - action
-          properties:
-            action: 
-              type: string
-              enum: [approve, fix]
-              description: "'approve' starts the rental. 'fix' moves camera to maintenance and requires a replacement."
-            replacement_camera_id: 
-              type: integer
-              description: Required only if action is 'fix'
-    responses:
-      200:
-        description: Handover processed successfully
-      400:
-        description: Missing replacement camera ID
-    """
     rental = Rental.query.get_or_404(rental_id)
     data = request.get_json()
     
-    action = data.get('action') 
-    camera = rental.camera
-    current_user_id = get_jwt_identity()
+    new_camera_id = data.get('camera_id')
+    if new_camera_id:
+        rental.camera_id = new_camera_id
+
+    rental.order_status = RentalStatus.ACTIVE.value
+    rental.pic_off_handover_id = get_jwt_identity() 
 
     try:
-        rental.pic_off_id = current_user_id
-        if action == 'approve':
-            camera.status = CameraStatus.RENTED
-            rental.order_status = RentalStatus.ACTIVE
-            msg = "Camera handed over successfully."
-
-        elif action == 'fix':
-            camera.status = CameraStatus.MAINTENANCE
-            
-            new_camera_id = data.get('replacement_camera_id')
-            if not new_camera_id:
-                return jsonify({"error": "Replacement camera ID required if original is rejected"}), 400
-            
-            new_camera = Camera.query.get_or_404(new_camera_id)
-            if new_camera.status != CameraStatus.AVAILABLE:
-                return jsonify({"error": "Replacement camera is not available"}), 400
-            
-            rental.camera_id = new_camera.id
-            new_camera.status = CameraStatus.RENTED
-            rental.order_status = RentalStatus.ACTIVE
-            msg = "Original camera moved to maintenance. Replacement issued."
-        
         db.session.commit()
-        return jsonify({"message": msg}), 200
-
+        return jsonify({"message": "Handover successful"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500

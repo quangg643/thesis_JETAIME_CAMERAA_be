@@ -187,7 +187,7 @@ def create_customer():
     }), 201
 
 
-@customers_bp.route('/<int:id>', methods=['PUT', 'PATCH'])
+@customers_bp.route('/<int:id>', methods=['PUT'])
 @jwt_required()
 def update_customer(id):
     """
