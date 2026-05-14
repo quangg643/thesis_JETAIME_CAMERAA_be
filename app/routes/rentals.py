@@ -433,12 +433,40 @@ def handover_camera(rental_id):
     rental = Rental.query.get_or_404(rental_id)
     data = request.get_json()
     
-    new_camera_id = data.get('camera_id')
-    if new_camera_id:
+    new_camera_id = data.get('new_camera_id')
+    old_camera_id = rental.camera_id
+    
+    if new_camera_id and int(new_camera_id) != old_camera_id:
+        old_camera = Camera.query.get(old_camera_id)
+        if old_camera:
+            old_camera.status = CameraStatus.AVAILABLE.value
+        
         rental.camera_id = new_camera_id
+        current_camera = Camera.query.get_or_404(new_camera_id)
+    else:
+        current_camera = Camera.query.get_or_404(old_camera_id)
 
+    # 2. Update current camera status to RENTED
+    current_camera.status = CameraStatus.RENTED.value
+
+    # Date handling logic
+    start_time_str = data.get('start_time')
+    return_time_str = data.get('expected_return_time')
+
+    new_start = datetime.fromisoformat(start_time_str) if start_time_str else rental.start_time
+    new_return = datetime.fromisoformat(return_time_str) if return_time_str else rental.expected_return_time
+
+    if new_return <= new_start:
+        return jsonify({"error": "Expected return date must be after the pickup date"}), 400
+
+    # Fee and Status updates
+    duration = new_return - new_start
+    rental.rental_fee = calculate_initial_fee(current_camera.product, duration)
+    
+    rental.start_time = new_start
+    rental.expected_return_time = new_return
     rental.order_status = RentalStatus.ACTIVE.value
-    rental.pic_off_handover_id = get_jwt_identity() 
+    rental.pic_off_handover_id = get_jwt_identity()
 
     try:
         db.session.commit()
