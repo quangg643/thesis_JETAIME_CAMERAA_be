@@ -5,8 +5,8 @@ from datetime import datetime
 
 
 def get_vietnam_time():
-    # Returns the current time in Vietnam (UTC+7)
-    return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
+    local_time = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
+    return local_time.replace(tzinfo=None)
 
 def calculate_initial_fee(product, duration):
     total_hours = duration.total_seconds() / 3600
