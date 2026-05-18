@@ -1,8 +1,8 @@
 import urllib.parse
 
 # 1. Configuration details based on your setup (SSMS 22, local, Windows Auth)
-DRIVER = "ODBC Driver 18 for SQL Server"  # Standard driver bundled with SSMS 22
-SERVER = "localhost"
+DRIVER = "ODBC Driver 17 for SQL Server"  # Standard driver bundled with SSMS 22
+SERVER = "localhost\\SQLEXPRESS"
 DATABASE = "jetaimee-cameraa"
 
 # 2. Build the connection parameters for Windows Authentication

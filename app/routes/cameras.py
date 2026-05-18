@@ -356,6 +356,8 @@ def get_all_cameras():
         
         if identifier:
             query = query.filter(Camera.identifier.ilike(f'%{identifier}%'))
+            
+        query = query.order_by(Camera.id.desc())
 
         # error_out=False means if the user asks for page 100 and there are only 2, return empty list
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
