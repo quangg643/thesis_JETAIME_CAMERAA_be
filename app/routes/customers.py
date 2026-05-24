@@ -261,7 +261,7 @@ def update_customer(id):
     }), 200
 
 @customers_bp.route('/<int:id>', methods=['DELETE'])
-@role_required(UserRole.MANAGER)
+@role_required([UserRole.MANAGER])
 def delete_customer(id):
     """
     Delete a customer (Manager only)

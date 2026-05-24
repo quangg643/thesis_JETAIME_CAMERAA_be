@@ -177,7 +177,7 @@ def get_rental_by_id(rental_id):
     }), 200
 
 @rental_bp.route('/create', methods=['POST'])
-@role_required(UserRole.STAFF_ON)
+@role_required([UserRole.STAFF_ON])
 def create_rental():
     """
     Create a new rental reservation
@@ -307,7 +307,7 @@ def create_rental():
         return jsonify({"error": "Database error", "details": str(e)}), 500
     
 @rental_bp.route('/<int:rental_id>', methods=['PUT'])
-@role_required(UserRole.STAFF_ON)
+@role_required([UserRole.STAFF_ON])
 def update_rental(rental_id):
     rental = Rental.query.get_or_404(rental_id)
     
@@ -346,7 +346,7 @@ def update_rental(rental_id):
         return jsonify({"error": "Update failed", "details": str(e)}), 500
 
 @rental_bp.route('/<int:rental_id>/return', methods=['PUT'])
-@role_required(UserRole.STAFF_OFF)
+@role_required([UserRole.STAFF_OFF])
 def return_camera(rental_id):
     """
     Process camera return and calculate final fees
@@ -393,14 +393,30 @@ def return_camera(rental_id):
         rental.rental_fee = calculate_initial_fee(product, actual_duration)
 
     if vn_now_naive > rental.expected_return_time:
-
         overdue_duration = vn_now_naive - rental.expected_return_time
         total_seconds_late = overdue_duration.total_seconds()
 
-        hours_late = math.ceil(total_seconds_late / 3600)
-        
-        product = rental.camera.product
-        penalty_fee = hours_late * product.additional_hour_price
+        # 1. Apply the 15-minute grace period check (900 seconds)
+        if total_seconds_late > 900:
+            product = rental.camera.product
+            
+            # 2. Total hours late (rounded up, as per your original logic)
+            total_hours_late = math.ceil(total_seconds_late / 3600)
+            
+            # 3. Split into days and remaining hours
+            days_late = total_hours_late // 24
+            remaining_hours_late = total_hours_late % 24
+            
+            # 4. Calculate penalty using both DB columns
+            penalty_fee = (days_late * product.additional_day_price) + \
+                          (remaining_hours_late * product.additional_hour_price)
+            
+            # For your JSON response data tracker
+            hours_late = total_hours_late 
+        else:
+            # Late but within the 15-minute grace window
+            hours_late = 0
+            penalty_fee = 0
 
     rental.penalty_fee = penalty_fee
     rental.total_amount = rental.rental_fee + penalty_fee
@@ -428,7 +444,7 @@ def return_camera(rental_id):
         return jsonify({"error": str(e)}), 500
     
 @rental_bp.route('/<int:rental_id>/handover', methods=['PUT'])
-@role_required(UserRole.STAFF_OFF)
+@role_required([UserRole.STAFF_OFF])
 def handover_camera(rental_id):
     rental = Rental.query.get_or_404(rental_id)
     data = request.get_json()
@@ -476,7 +492,7 @@ def handover_camera(rental_id):
         return jsonify({"error": str(e)}), 500
     
 @rental_bp.route('/<int:rental_id>', methods=['DELETE'])
-@role_required(UserRole.STAFF_ON)
+@role_required([UserRole.STAFF_ON])
 def delete_rental(rental_id):
     """
     Cancel a pending rental

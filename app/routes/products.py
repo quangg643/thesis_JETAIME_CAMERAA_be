@@ -4,8 +4,6 @@ from app import db
 from app.enums import CameraStatus
 from app.models import Camera, Product
 
-from flasgger import swag_from
-
 
 products_bp = Blueprint('products', __name__)
 
@@ -233,7 +231,7 @@ def delete_product(product_id):
 @jwt_required()
 def get_products_with_stock():
     """
-    Get all cameras with current stock counts
+    Get all product templates with distinct breakdown of status stock counts
     ---
     tags:
       - Products
@@ -241,7 +239,7 @@ def get_products_with_stock():
       - cookieAuth: []
     responses:
       200:
-        description: List of products with total and available stock
+        description: List of products with total, available, rented, and maintenance stock
         schema:
           type: object
           properties:
@@ -262,16 +260,30 @@ def get_products_with_stock():
                   additional_hour_price: {type: integer}
                   total_stock: {type: integer}
                   available_stock: {type: integer}
+                  rented_stock: {type: integer}
+                  maintenance_stock: {type: integer}
     """
     try:
         products = Product.query.all()
         
         result = []
         for product in products:
+            # Query individual counts matching each dynamic CameraStatus assignment
             total_stock = Camera.query.filter_by(product_id=product.id).count()
+            
             available_stock = Camera.query.filter_by(
                 product_id=product.id,
                 status=CameraStatus.AVAILABLE
+            ).count()
+
+            rented_stock = Camera.query.filter_by(
+                product_id=product.id,
+                status=CameraStatus.RENTED
+            ).count()
+
+            maintenance_stock = Camera.query.filter_by(
+                product_id=product.id,
+                status=CameraStatus.MAINTENANCE
             ).count()
 
             product_data = {
@@ -286,6 +298,9 @@ def get_products_with_stock():
                 "additional_hour_price": product.additional_hour_price,
                 "total_stock": total_stock,
                 "available_stock": available_stock,
+                "rented_stock": rented_stock,
+                "maintenance_stock": maintenance_stock,
+                "created_at": product.created_at.isoformat()
             }
             result.append(product_data)
 

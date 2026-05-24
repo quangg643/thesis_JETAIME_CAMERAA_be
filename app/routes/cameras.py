@@ -369,6 +369,7 @@ def get_all_cameras():
                     "id": c.id,
                     "identifier": c.identifier,
                     "status": c.status.name,
+                    "created_at": c.created_at.date().isoformat(),
                     "product_id": c.product_id,
                     "product_name": c.product.name if c.product else "Unknown"
                 } for c in pagination.items],

@@ -37,7 +37,7 @@ def offboard(id):
     
     employee = Employee.query.get_or_404(id)
 
-    current_user_id = get_current_user()
+    current_user_id = get_current_user().id
     if employee.id == int(current_user_id):
         return jsonify({"error": "You cannot offboard yourself"}), 400
     
@@ -62,7 +62,7 @@ def offboard(id):
         return jsonify({"error": "Failed to update employee status", "details": str(e)}), 500
 
 @employees_bp.route('/', methods=['GET'])
-@jwt_required()
+@role_required([UserRole.MANAGER, UserRole.ADMIN])
 def get_all_employees():
     """
     Get all active employees
@@ -192,19 +192,15 @@ def update_employee(employee_id):
     hour_salary_param = data.get('hour_salary')
 
     updated_fields = {}
+    role_changed = False
 
     if role_param:
         try:
             new_role = UserRole[role_param.upper()]
             if new_role != employee.role:
-                # If moving AWAY from Staff roles, reset hourly pay
-                staff_roles = [UserRole.STAFF_ON, UserRole.STAFF_OFF]
-                if employee.role in staff_roles and new_role not in staff_roles:
-                    employee.hour_salary = 0.0
-                    updated_fields['hour_salary'] = 0.0
-                
                 employee.role = new_role
                 updated_fields['role'] = new_role.value
+                role_changed = True
         except KeyError:
             return jsonify({"error": f"Invalid role. Valid options: {[r.name for r in UserRole]}"}), 400
 
@@ -213,15 +209,29 @@ def update_employee(employee_id):
 
     if base_salary_param is not None:
         if is_staff:
-            return jsonify({"error": "STAFF_ON/OFF cannot have a base_salary. Update hour_salary instead."}), 400
+            return jsonify({"error": "STAFF_ON/OFF cannot have a base_salary. Provide hour_salary instead."}), 400
         try:
-            val = float(base_salary_param)
+            val = base_salary_param
             if val < 0: raise ValueError
             employee.base_salary = val
             updated_fields['base_salary'] = val
         except ValueError:
             return jsonify({"error": "Base salary must be a non-negative number"}), 400
 
+    elif role_changed:
+        # Role changed, but NO base_salary was provided in input
+        if is_staff:
+            # Staff can't have base salary
+            employee.base_salary = 0
+            updated_fields['base_salary'] = 0
+        else:
+            # Management role changed, apply a default base salary if it was previously 0 or invalid
+            default_base = 7500000
+            if employee.base_salary == 0:
+                employee.base_salary = default_base
+                updated_fields['base_salary'] = default_base
+
+    # 3. Process Hour Salary
     if hour_salary_param is not None:
         if not is_staff:
             return jsonify({"error": "Only STAFF_ON/OFF can have an hour_salary."}), 400
@@ -233,6 +243,20 @@ def update_employee(employee_id):
         except ValueError:
             return jsonify({"error": "Hour salary must be a non-negative number"}), 400
 
+    elif role_changed:
+        # Role changed, but NO hour_salary was provided in input
+        if not is_staff:
+            # Management roles can't have hourly wages
+            employee.hour_salary = 0
+            updated_fields['hour_salary'] = 0
+        else:
+            # Staff role changed, apply a default hourly rate if it was previously 0
+            default_hourly = 23000
+            if employee.hour_salary == 0:
+                employee.hour_salary = default_hourly
+                updated_fields['hour_salary'] = default_hourly
+
+    # 4. Check for mutations
     if not updated_fields:
         return jsonify({"message": "No changes detected or provided"}), 200
 

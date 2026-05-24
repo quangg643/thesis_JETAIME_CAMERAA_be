@@ -29,7 +29,7 @@ def create_app():
         supports_credentials=True,
         origins=["http://127.0.0.1:5500", "https://localhost:5500"],
         allow_headers=["Content-Type", "X-CSRF-TOKEN"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     )
 
     @jwt.user_lookup_loader
