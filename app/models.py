@@ -89,9 +89,11 @@ class Product(db.Model):
     one_day_price = db.Column(db.Integer)
     two_day_price = db.Column(db.Integer)
     three_day_price = db.Column(db.Integer)
-    additional_day_price = db.Column(db.Integer)
     
+    additional_day_price = db.Column(db.Integer)
     additional_hour_price = db.Column(db.Integer)
+    
+    description = db.Column(db.String(100))
     
     created_at = db.Column(db.DateTime, default=get_vietnam_time)
     cameras = db.relationship('Camera', back_populates='product', lazy=True)

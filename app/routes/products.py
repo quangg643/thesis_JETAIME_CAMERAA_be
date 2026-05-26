@@ -73,6 +73,7 @@ def add_product():
     three_day_price = data.get('three_day_price', 0)
     additional_day_price = data.get('additional_day_price', 0)
     additional_hour_price = data.get('additional_hour_price', 0)
+    description = data.get('description')
     
     if not name and not brand:
         return jsonify({"error": "name and brand are required"}), 400
@@ -87,6 +88,7 @@ def add_product():
             three_day_price=three_day_price,
             additional_day_price=additional_day_price,
             additional_hour_price=additional_hour_price,
+            description=description
         )
 
         db.session.add(new_product)
@@ -152,6 +154,8 @@ def update_product(product_id):
     two_day_price = request.args.get('two_day_price', type=int)
     additional_day_price = request.args.get('additional_day_price', type=int)
     additional_hour_price = request.args.get('additional_hour_price', type=int)
+    description = request.args.get('description', type=str)
+
 
     if six_hour_price is not None:
         product.six_hour_price = six_hour_price
@@ -165,14 +169,15 @@ def update_product(product_id):
         product.additional_day_price = additional_day_price
     if additional_hour_price is not None:
         product.additional_hour_price = additional_hour_price
+    if description is not None:
+      product.description = description
 
     db.session.commit()
 
     return jsonify({
         "message": "Product updated successfully",
         "product_id": product.id,
-        "name": product.name,
-        "stock": product.stock
+        "name": product.name
     }), 200
 
 @products_bp.route('/<int:product_id>', methods=['DELETE'])
@@ -198,32 +203,46 @@ def delete_product(product_id):
       500:
         description: Database error (e.g., if cameras are still linked to this product)
     """
+    product = Product.query.get(product_id)
+    if not product:
+        return jsonify({
+            "success": False,
+            "error": "Camera category not found."
+        }), 404
+
+    # 2. Check if there are any associated cameras that are NOT available
+    # Uses CameraStatus.AVAILABLE from your app.enums import structure
+    non_available_cameras_count = Camera.query.filter(
+        Camera.product_id == product_id,
+        Camera.status != CameraStatus.AVAILABLE
+    ).count()
+
+    if non_available_cameras_count > 0:
+        return jsonify({
+            "success": False,
+            "error": f"Cannot delete this category. There are currently {non_available_cameras_count} camera asset(s) that are rented out or in maintenance."
+        }), 400
+
     try:
-        product = Product.query.get(product_id)
-        
-        if not product:
-            return jsonify({
-                "error": "Product not found",
-                "product_id": product_id
-            }), 404
+        # 3. Safe to cascade delete or remove remaining available cameras if any exist
+        # If your database models don't have passive_deletes/cascades configured, 
+        # explicitly remove the available camera assets first to avoid foreign key violations:
+        Camera.query.filter_by(product_id=product_id).delete()
 
-        product_name = product.name
-        product_id_deleted = product.id
-
+        # 4. Remove the core category template
         db.session.delete(product)
         db.session.commit()
 
         return jsonify({
-            "message": "Product deleted successfully",
-            "deleted_id": product_id_deleted,
-            "name": product_name
+            "success": True,
+            "message": "Camera category template and its available camera assets were deleted successfully."
         }), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({
-            "error": "Failed to delete product",
-            "details": str(e)
+            "success": False,
+            "error": "An internal database error occurred while trying to process the deletion request."
         }), 500
     
 
@@ -296,6 +315,7 @@ def get_products_with_stock():
                 "three_day_price": product.three_day_price,
                 "additional_day_price": product.additional_day_price,
                 "additional_hour_price": product.additional_hour_price,
+                "description": product.description or "N/A",
                 "total_stock": total_stock,
                 "available_stock": available_stock,
                 "rented_stock": rented_stock,
