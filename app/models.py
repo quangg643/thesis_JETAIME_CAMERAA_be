@@ -174,13 +174,22 @@ class ShiftAssigned(db.Model):
     
     created_at = db.Column(db.DateTime, default=get_vietnam_time)
     
-    note = db.Column(db.String(255))
-
     employee = db.relationship('Employee', back_populates='shift_assignments')
     shift = db.relationship('Shift', back_populates='shift_assignments')
 
     __table_args__ = (
         db.UniqueConstraint('employee_id', 'shift_id', 'assigned_date', name='_emp_shift_date_uc'),
+    )
+    
+class DailyShiftStatus(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
+    assigned_date = db.Column(db.Date, nullable=False)
+    
+    note = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('shift_id', 'assigned_date', name='_shift_date_note_uc'),
     )
 class Kpi(db.Model):
     id = db.Column(db.Integer, primary_key=True)

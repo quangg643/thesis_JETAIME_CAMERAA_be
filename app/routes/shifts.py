@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import ShiftAssigned, Shift, Employee
+from app.models import DailyShiftStatus, ShiftAssigned, Shift, Employee
 from datetime import datetime
 
 shifts_bp = Blueprint('shifts', __name__)
@@ -28,31 +28,45 @@ def get_calendar_matrix():
         join(Employee, ShiftAssigned.employee_id == Employee.id).\
         filter(ShiftAssigned.assigned_date.between(start_date, end_date)).all()
 
-    # 3. Use an intermediate nested dictionary matrix to group records by date and shift
-    # Structure: matrix[date_str][shift_name] = { "note": str, "employees": [...] }
+    # Query all daily statuses (notes) for the date range
+    daily_statuses = DailyShiftStatus.query.filter(
+        DailyShiftStatus.assigned_date.between(start_date, end_date)
+    ).all()
+    
+    # Map statuses for easy dictionary lookups: status_map[(date, shift_id)] = note
+    status_map = {(status.assigned_date.strftime('%Y-%m-%d'), status.shift_id): status.note for status in daily_statuses}
+
     calendar_matrix = defaultdict(dict)
 
+    # Pre-populate rows with saved notes from DailyShiftStatus first
+    for (date_val, shift_id), note_text in status_map.items():
+        shift = Shift.query.get(shift_id)
+        if shift:
+            shift_key = shift.shift_name
+            display_title = f"Shift {shift_key.capitalize()}"
+            calendar_matrix[date_val][shift_key] = {
+                "type": shift_key,
+                "title": display_title,
+                "time": f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
+                "note": note_text or "",
+                "employees": []
+            }
+
+    # Now merge in the assigned employees
     for assoc, shift, employee in assignments:
         date_key = assoc.assigned_date.strftime('%Y-%m-%d')
-        shift_key = shift.shift_name # e.g., 'morning', 'afternoon', 'evening', 'night'
+        shift_key = shift.shift_name
 
         if shift_key not in calendar_matrix[date_key]:
-            # Derive elegant localized titles and display intervals safely
             display_title = f"Shift {shift_key.capitalize()}"
-            if shift_key == "morning": display_title = "Morning Shift"
-            elif shift_key == "afternoon": display_title = "Afternoon Shift"
-            elif shift_key == "evening": display_title = "Evening Shift"
-            elif shift_key == "night": display_title = "Night Shift"
-
             calendar_matrix[date_key][shift_key] = {
                 "type": shift_key,
                 "title": display_title,
                 "time": f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
-                "note": assoc.note or "",
+                "note": status_map.get((date_key, shift.id), ""), # Grab global note if present
                 "employees": []
             }
 
-        # Append structured sub-object tracking metrics matching Employee model parameters
         calendar_matrix[date_key][shift_key]["employees"].append({
             "id": employee.id,
             "name": employee.name,
@@ -109,7 +123,6 @@ def assign_employee():
     date_str = data.get('date')
     shift_type = data.get('shift_type')
     employee_id = data.get('employee_id')
-    note_text = data.get('note', '')
 
     if not all([date_str, shift_type, employee_id]):
         return jsonify({"error": "Missing parameters needed to initialize assignment"}), 400
@@ -136,7 +149,6 @@ def assign_employee():
         employee_id=employee.id,
         shift_id=shift_def.id,
         assigned_date=target_date,
-        note=note_text
     )
 
     try:
@@ -165,25 +177,36 @@ def update_shift_note():
     if not all([date_str, shift_type]):
         return jsonify({"error": "Missing coordinates needed to target shift note"}), 400
 
-    target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
 
     shift_def = Shift.query.filter_by(shift_name=shift_type).first()
     if not shift_def:
         return jsonify({"error": "Invalid shift type parameter"}), 404
 
-    # Fetch all flat employee rows tracking this shared shift slot container code block
-    matching_assignments = ShiftAssigned.query.filter_by(
-        assigned_date=target_date,
-        shift_id=shift_def.id
-    ).all()
-
     try:
-        # Uniformly propagate modified notes string data across all active team records
-        for assignment in matching_assignments:
-            assignment.note = new_note
+        # Check if a global daily status row already exists for this shift on this date
+        daily_status = DailyShiftStatus.query.filter_by(
+            assigned_date=target_date,
+            shift_id=shift_def.id
+        ).first()
+
+        if daily_status:
+            # If it exists, update the note text string
+            daily_status.note = new_note
+        else:
+            # If it doesn't exist, build a fresh row record container
+            daily_status = DailyShiftStatus(
+                assigned_date=target_date,
+                shift_id=shift_def.id,
+                note=new_note
+            )
+            db.session.add(daily_status)
         
         db.session.commit()
         return jsonify({"success": True, "message": "Shift operational note synchronized successfully"})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": f"Database bulk-sync update exception: {str(e)}"}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
