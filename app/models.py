@@ -146,6 +146,8 @@ class Rental(db.Model):
 class Shift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
+    shift_name = db.Column(db.String(50), nullable=False, unique=True)
+    
     start_time = db.Column(db.Time, nullable=False)
     end_time = db.Column(db.Time, nullable=False)
     
@@ -171,6 +173,8 @@ class ShiftAssigned(db.Model):
     assigned_date = db.Column(db.Date, nullable=False)
     
     created_at = db.Column(db.DateTime, default=get_vietnam_time)
+    
+    note = db.Column(db.String(255))
 
     employee = db.relationship('Employee', back_populates='shift_assignments')
     shift = db.relationship('Shift', back_populates='shift_assignments')

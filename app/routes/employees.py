@@ -270,3 +270,40 @@ def update_employee(employee_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Database error", "details": str(e)}), 500
+      
+# Add this endpoint to your existing app/routes/employees.py (or where employees_bp is defined)
+
+@employees_bp.route('/active-list', methods=['GET'])
+@role_required([UserRole.MANAGER])  # Protects the route using your cookie-based JWT authentication strategy
+def get_active_employees_list():
+    """
+    Get a clean, lightweight list of active employees for form dropdowns
+    ---
+    tags:
+      - Employees
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: List of active employee profiles
+      401:
+        description: Unauthorized / Missing valid authentication cookies
+    """
+    try:
+        # Query employees whose account status is not OFFBOARDED
+        active_staff = Employee.query.filter(
+            Employee.status != AccountStatus.OFFBOARDED
+        ).order_by(Employee.name.asc()).all()
+
+        # Format minimal key-value pairs to reduce payload size
+        result = [{
+            "id": emp.id,
+            "name": emp.name,
+            "email": emp.email,
+            "phone": emp.phone or "N/A"
+        } for emp in active_staff]
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to retrieve active workforce: {str(e)}"}), 500

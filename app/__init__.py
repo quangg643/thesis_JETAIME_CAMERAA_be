@@ -14,6 +14,7 @@ from app.routes.auth import auth_bp
 from app.routes.cameras import cameras_bp
 from app.routes.customers import customers_bp
 from app.routes.rentals import rental_bp
+from app.routes.shifts import shifts_bp
 
 
 
@@ -45,6 +46,8 @@ def create_app():
     app.register_blueprint(cameras_bp, url_prefix='/api/cameras')
     app.register_blueprint(customers_bp, url_prefix='/api/customers')
     app.register_blueprint(rental_bp, url_prefix='/api/rentals')
+    app.register_blueprint(shifts_bp, url_prefix='/api/shifts')
+
 
 
 
