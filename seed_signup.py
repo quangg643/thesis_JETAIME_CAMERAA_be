@@ -1,6 +1,6 @@
 import uuid
 from app import db, create_app
-from app.enums import GenderEnum, UserRole
+from app.enums import GenderEnum, UserRole, AccountStatus # Added AccountStatus if needed
 from app.models import Employee
 from werkzeug.security import generate_password_hash
 
@@ -10,9 +10,10 @@ def seed_staff_batch():
     base_password = "06042003"
     hashed_password = generate_password_hash(base_password)
     
-    # Sample names
+    # Sample data
     first_names = ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Vu", "Phan", "Dinh", "Dang", "Bui"]
     last_names = ["An", "Binh", "Chi", "Dung", "Em", "Giang", "Hung", "Hoa", "Khanh", "Linh"]
+    default_address = "123 Duong Le Loi, Quan 1, TP. HCM"
 
     with app.app_context():
         print("🚀 Starting Batch Staff + Admin & Manager Seeding...")
@@ -21,7 +22,7 @@ def seed_staff_batch():
         admin_name = "Admin System"
         admin_email = "admin@gmail.com"
         
-        if not Employee.query.filter_by(email=admin_email).first():
+        if not Employee.query.filter_by(email=admin_email).first() and not Employee.query.filter_by(name=admin_name).first():
             admin = Employee(
                 name=admin_name,
                 email=admin_email,
@@ -29,19 +30,20 @@ def seed_staff_batch():
                 password=hashed_password,
                 role=UserRole.ADMIN,
                 phone="0987654321",
-                hour_salary=None,
-                base_salary=15000000  # Example base salary for admin
+                address=default_address, # Added required field
+                hour_salary=0,           # Set to 0 because default=0 in model and nullable=False
+                base_salary=15000000  
             )
             db.session.add(admin)
             print(f"➕ Added Admin: {admin_name} | Email: {admin_email}")
         else:
-            print(f"⚠️ Admin account with email {admin_email} already exists.")
+            print(f"⚠️ Admin account or name already exists.")
 
         # === 2. Create Manager Account ===
         manager_name = "Manager Nguyen Van A"
         manager_email = "manager@gmail.com"
         
-        if not Employee.query.filter_by(email=manager_email).first():
+        if not Employee.query.filter_by(email=manager_email).first() and not Employee.query.filter_by(name=manager_name).first():
             manager = Employee(
                 name=manager_name,
                 email=manager_email,
@@ -49,13 +51,14 @@ def seed_staff_batch():
                 password=hashed_password,
                 role=UserRole.MANAGER,
                 phone="0987654322",
-                hour_salary=None,
-                base_salary=12000000  # Example base salary for manager
+                address=default_address, # Added required field
+                hour_salary=0,           # Set to 0 because default=0 in model
+                base_salary=12000000  
             )
             db.session.add(manager)
             print(f"➕ Added Manager: {manager_name} | Email: {manager_email}")
         else:
-            print(f"⚠️ Manager account with email {manager_email} already exists.")
+            print(f"⚠️ Manager account or name already exists.")
 
         # === 3. Create Staff Batch ===
         groups = [
@@ -73,11 +76,15 @@ def seed_staff_batch():
                 name = f"{first_names[i-1]} {last_names[i-1]} ({suffix}-{i})"
                 email = f"staff_{role.value.lower()}_{i}@gmail.com"
 
-                # Check for duplicates
+                # Check for duplicates (Model requires unique names AND unique emails)
                 if Employee.query.filter_by(email=email).first() or \
                    Employee.query.filter_by(name=name).first():
                     print(f"⚠️ Skipping {name} - already exists.")
                     continue
+
+                # Generate a unique phone number format that fits 20 characters maximum
+                phone_suffix = f"{i:02d}{'1' if suffix=='On' else '2'}"
+                phone = f"0912345{phone_suffix}" 
 
                 new_user = Employee(
                     name=name,
@@ -85,9 +92,10 @@ def seed_staff_batch():
                     gender=group["gender"],
                     password=hashed_password,
                     role=role,
-                    phone=f"09876543{i:02d}{'1' if suffix=='On' else '2'}",
+                    phone=phone,
+                    address=f"{i * 10} Duong Nguyen Hue, District 1, HCMC", # Added required field
                     hour_salary=group["hour_salary"],
-                    base_salary=None
+                    base_salary=0 # Set to 0 because default=0 in model
                 )
 
                 db.session.add(new_user)

@@ -2,6 +2,7 @@ from collections import defaultdict
 
 from flask import Blueprint, request, jsonify
 from app import db
+from app.helpers import verify_shift_is_editable
 from app.models import DailyShiftStatus, ShiftAssigned, Shift, Employee
 from datetime import datetime
 
@@ -9,9 +10,9 @@ shifts_bp = Blueprint('shifts', __name__)
 
 @shifts_bp.route('/calendar', methods=['GET'])
 def get_calendar_matrix():
-    # 1. Parse and validate the query parameters tracking timeline boundaries
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
+    search_query = request.args.get('query', '').strip().lower() # Capture search token optional parameters
 
     if not start_date_str or not end_date_str:
         return jsonify({"error": "Missing required start_date or end_date parameters."}), 400
@@ -22,48 +23,49 @@ def get_calendar_matrix():
     except ValueError:
         return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
-    # 2. Query flat database junction row records stretching across the date range
+    # Query flat database junction row records stretching across the date range
     assignments = db.session.query(ShiftAssigned, Shift, Employee).\
         join(Shift, ShiftAssigned.shift_id == Shift.id).\
         join(Employee, ShiftAssigned.employee_id == Employee.id).\
         filter(ShiftAssigned.assigned_date.between(start_date, end_date)).all()
 
-    # Query all daily statuses (notes) for the date range
     daily_statuses = DailyShiftStatus.query.filter(
         DailyShiftStatus.assigned_date.between(start_date, end_date)
     ).all()
     
-    # Map statuses for easy dictionary lookups: status_map[(date, shift_id)] = note
     status_map = {(status.assigned_date.strftime('%Y-%m-%d'), status.shift_id): status.note for status in daily_statuses}
 
     calendar_matrix = defaultdict(dict)
 
-    # Pre-populate rows with saved notes from DailyShiftStatus first
-    for (date_val, shift_id), note_text in status_map.items():
-        shift = Shift.query.get(shift_id)
-        if shift:
-            shift_key = shift.shift_name
-            display_title = f"Shift {shift_key.capitalize()}"
-            calendar_matrix[date_val][shift_key] = {
-                "type": shift_key,
-                "title": display_title,
-                "time": f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
-                "note": note_text or "",
-                "employees": []
-            }
+    # Pre-populate rows with notes (Only skip if actively filtering for a specific employee match)
+    if not search_query:
+        for (date_val, shift_id), note_text in status_map.items():
+            shift = Shift.query.get(shift_id)
+            if shift:
+                shift_key = shift.shift_name
+                calendar_matrix[date_val][shift_key] = {
+                    "type": shift_key,
+                    "title": f"Shift {shift_key.capitalize()}",
+                    "time": f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
+                    "note": note_text or "",
+                    "employees": []
+                }
 
     # Now merge in the assigned employees
     for assoc, shift, employee in assignments:
+        # Optimization check: If searching by employee, drop rows where name doesn't match token parameters
+        if search_query and search_query not in employee.name.lower():
+            continue
+
         date_key = assoc.assigned_date.strftime('%Y-%m-%d')
         shift_key = shift.shift_name
 
         if shift_key not in calendar_matrix[date_key]:
-            display_title = f"Shift {shift_key.capitalize()}"
             calendar_matrix[date_key][shift_key] = {
                 "type": shift_key,
-                "title": display_title,
+                "title": f"Shift {shift_key.capitalize()}",
                 "time": f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
-                "note": status_map.get((date_key, shift.id), ""), # Grab global note if present
+                "note": status_map.get((date_key, shift.id), ""),
                 "employees": []
             }
 
@@ -176,6 +178,10 @@ def update_shift_note():
 
     if not all([date_str, shift_type]):
         return jsonify({"error": "Missing coordinates needed to target shift note"}), 400
+    
+    is_editable, error_msg = verify_shift_is_editable(date_str, shift_type)
+    if not is_editable:
+        return jsonify({"success": False, "error": error_msg}), 0, 403
 
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
