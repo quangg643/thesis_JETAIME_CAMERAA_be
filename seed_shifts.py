@@ -13,8 +13,8 @@ def seed_shifts():
     print("Initializing structural shift data seeding...")
     
     # 1. Define standard operational shift rules using your model definitions
-    morning = Shift(shift_name="morning", start_time=time(8, 0), end_time=time(12, 0), hours=4)
-    afternoon = Shift(shift_name="afternoon", start_time=time(12, 0), end_time=time(17, 0), hours=5)
+    morning = Shift(shift_name="morning", start_time=time(9, 0), end_time=time(13, 0), hours=4)
+    afternoon = Shift(shift_name="afternoon", start_time=time(13, 0), end_time=time(17, 0), hours=5)
     evening = Shift(shift_name="evening", start_time=time(17, 0), end_time=time(22, 0), hours=5)
     night = Shift(shift_name="night", start_time=time(22, 0), end_time=time(0, 0), hours=2)
 
