@@ -217,8 +217,11 @@ class Payroll(db.Model):
     
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
     period = db.Column(db.String(7), nullable=False)
+    
+    init_salary = db.Column(db.Integer, nullable=False)
     bonus = db.Column(db.Integer, default=0)
+    penalty = db.Column(db.Integer, default=0)
     total_pay = db.Column(db.Integer, nullable=False)
-    paid = db.Column(db.Boolean, default=False)
-    payment_date = db.Column(db.Date)
+    
+    checking_date = db.Column(db.Date)
     created_at = db.Column(db.DateTime, default=get_vietnam_time)
