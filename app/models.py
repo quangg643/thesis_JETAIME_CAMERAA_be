@@ -2,7 +2,7 @@ from datetime import datetime, date, timezone
 from app import db
 from sqlalchemy import Enum as SQLEnum
 
-from app.enums import AccountStatus, CameraBrand, CameraStatus, GenderEnum, PaymentEnum, RentalStatus, UserRole
+from app.enums import AccountStatus, CameraBrand, CameraStatus, GenderEnum, PaymentEnum, PenaltyLevel, RentalStatus, UserRole
 from app.helpers import get_vietnam_time
 
 class TokenBlocklist(db.Model):
@@ -207,7 +207,7 @@ class Penalty(db.Model):
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
     
     penalty_name = db.Column(db.Text, nullable=False)
-    level = db.Column(db.Integer, nullable=False)
+    level = db.Column(SQLEnum(PenaltyLevel), nullable=False)
     count = db.Column(db.Integer, default=1, nullable=False)
     
     created_at = db.Column(db.DateTime, default=get_vietnam_time)

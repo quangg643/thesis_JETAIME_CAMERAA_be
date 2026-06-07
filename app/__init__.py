@@ -16,8 +16,7 @@ from app.routes.customers import customers_bp
 from app.routes.rentals import rental_bp
 from app.routes.shifts import shifts_bp
 from app.routes.salaries import salaries_bp
-
-
+from app.routes.penalties import penalties_bp
 
 def create_app():
     app = Flask(__name__)
@@ -49,10 +48,7 @@ def create_app():
     app.register_blueprint(rental_bp, url_prefix='/api/rentals')
     app.register_blueprint(shifts_bp, url_prefix='/api/shifts')
     app.register_blueprint(salaries_bp, url_prefix='/api/salaries')
-
-
-
-
+    app.register_blueprint(penalties_bp, url_prefix='/api/penalties')
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):

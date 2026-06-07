@@ -36,3 +36,9 @@ class RentalStatus(str, Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    
+import enum
+
+class PenaltyLevel(enum.IntEnum):
+    LEVEL_1 = 1
+    LEVEL_2 = 2
