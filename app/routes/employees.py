@@ -130,6 +130,7 @@ def get_all_employees():
             'name': emp.name,
             'email': emp.email,
             'phone': emp.phone,
+            'address': emp.address,
             'role': emp.role.value,
             'gender':emp.gender.value,
             'salary': salary_to_show,
