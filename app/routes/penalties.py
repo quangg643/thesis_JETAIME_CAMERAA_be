@@ -8,6 +8,50 @@ penalties_bp = Blueprint('penalties', __name__)
 
 @penalties_bp.route('/', methods=['GET'])
 def get_all_penalties():
+    """
+    Get a paginated list of staff disciplinary penalties with search filters
+    ---
+    tags:
+      - Penalties
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: Page number (defensive fallback to 1 if < 1)
+      - name: per_page
+        in: query
+        type: integer
+        default: 10
+        description: Items per page (defensive fallback to 10 if < 1)
+      - name: search
+        in: query
+        type: string
+        description: Server-side search filter targeting Employee Name, Penalty Name, or Employee ID
+    responses:
+      200:
+        description: Paginated dictionary list of matches
+        schema:
+          type: object
+          properties:
+            penalties:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  employee_id: {type: integer}
+                  employee_name: {type: string}
+                  penalty_name: {type: string}
+                  level: {type: integer, description: "Enum level value matching rules"}
+                  count: {type: integer}
+                  created_at: {type: string, format: date}
+            total: {type: integer}
+            pages: {type: integer}
+            current_page: {type: integer}
+      500:
+        description: Server-side database mapping failure
+    """
     try:
         # 1. Extract query parameters with defensive fallbacks
         page = request.args.get('page', 1, type=int)
@@ -68,6 +112,39 @@ def get_all_penalties():
 # ==========================================
 @penalties_bp.route('/<int:penalty_id>', methods=['DELETE'])
 def delete_penalty(penalty_id):
+    """
+    Delete a penalty record by its ID
+    ---
+    tags:
+      - Penalties
+    parameters:
+      - name: penalty_id
+        in: path
+        type: integer
+        required: true
+        description: The unique identifier of the penalty record to delete
+    responses:
+      200:
+        description: Penalty record successfully deleted
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Penalty record #5 successfully deleted."}
+      404:
+        description: Penalty record not found
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Penalty record #5 does not exist."}
+      500:
+        description: Database rollback error while deleting the record
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Database error while deleting record."}
+            details: {type: string}
+    """
     penalty = Penalty.query.get(penalty_id)
     
     if not penalty:
@@ -87,6 +164,63 @@ def delete_penalty(penalty_id):
 
 @penalties_bp.route('/', methods=['POST'])
 def log_employee_penalty():
+    """
+    Log a new penalty for an employee
+    ---
+    tags:
+      - Penalties
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - employee_id
+            - penalty_name
+            - level
+          properties:
+            employee_id: {type: integer, example: 2}
+            penalty_name: {type: string, example: "Late Attendance"}
+            level: {type: integer, example: 1, description: "Raw integer corresponding to PenaltyLevel enum"}
+            count: {type: integer, default: 1, example: 1}
+    responses:
+      201:
+        description: Penalty successfully logged
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Penalty successfully logged for John Doe."}
+            penalty:
+              type: object
+              properties:
+                id: {type: integer}
+                employee_id: {type: integer}
+                penalty_name: {type: string}
+                level: {type: integer}
+                count: {type: integer}
+                created_at: {type: string, format: date-time}
+      400:
+        description: Missing required fields, invalid level format, or count <= 0
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Missing required fields."}
+      404:
+        description: Target Employee row record not found
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Employee #2 does not exist."}
+      500:
+        description: Database persistence transaction failed
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Database persistence issue."}
+            details: {type: string}
+    """
     data = request.get_json() or {}
     employee_id = data.get('employee_id')
     penalty_name = data.get('penalty_name', '').strip()
@@ -141,6 +275,56 @@ def log_employee_penalty():
     
 @penalties_bp.route('/<int:penalty_id>', methods=['PUT'])
 def update_penalty(penalty_id):
+    """
+    Modify an existing penalty record's metrics and metadata
+    ---
+    tags:
+      - Penalties
+    parameters:
+      - name: penalty_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - penalty_name
+            - level
+            - count
+          properties:
+            penalty_name: {type: string, example: "Late Attendance"}
+            level: {type: integer, example: 1, description: "PenaltyLevel enum matching rules"}
+            count: {type: integer, example: 2, description: "Must be a positive integer (> 0)"}
+    responses:
+      200:
+        description: Penalty record updated successfully
+        schema:
+          type: object
+          properties:
+            message: {type: string, example: "Penalty record updated successfully"}
+            penalty:
+              type: object
+              properties:
+                id: {type: integer}
+                penalty_name: {type: string}
+                level: {type: integer}
+                count: {type: integer}
+      400:
+        description: Missing modified properties or invalid metrics/enum types
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Missing modified properties."}
+      404:
+        description: Penalty record not found
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Penalty record #5 does not exist."}
+    """
     penalty = Penalty.query.get(penalty_id)
     if not penalty:
         return jsonify({"error": f"Penalty record #{penalty_id} does not exist."}), 404

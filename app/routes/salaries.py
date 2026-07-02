@@ -12,6 +12,64 @@ salaries_bp = Blueprint('salaries', __name__)
 @salaries_bp.route('/state', methods=['GET'])
 @role_required([UserRole.ADMIN, UserRole.MANAGER])
 def get_all_salaries_state():
+    """
+    Fetch a real-time calculated overview of employee payroll states, including base pay, KPI bonuses, and penalty deductions
+    ---
+    tags:
+      - Salaries & Payroll
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: period
+        in: query
+        type: string
+        placeholder: "YYYY-MM"
+        description: Target period to analyze. Defaults dynamically to the current Vietnam Year-Month calendar string.
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: per_page
+        in: query
+        type: integer
+        default: 10
+      - name: search
+        in: query
+        type: string
+        description: Filters output tracking employee names
+    responses:
+      200:
+        description: Array list of live computed wages
+        schema:
+          type: object
+          properties:
+            payrolls:
+              type: array
+              items:
+                type: object
+                properties:
+                  employee_id: {type: integer}
+                  employee_name: {type: string}
+                  employee_role: {type: string}
+                  period: {type: string, example: "2026-03"}
+                  total_hours: {type: number, example: 160.5}
+                  base_pay: {type: integer, example: 8000000}
+                  kpi_bonus: {type: integer, example: 450000}
+                  penalty_deduction: {type: integer, example: 100000}
+                  final_salary: {type: integer, example: 8350000}
+                  status: {type: string, example: "LIVE_MONITORING"}
+            total_records: {type: integer}
+            current_page: {type: integer}
+            total_pages: {type: integer}
+      400:
+        description: Invalid date period time window string schema matching rules
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Invalid period format. Use YYYY-MM"}
+      500:
+        description: Internal database mapping error during commit
+    """
     # 1. Period & Pagination parameters
     current_time = get_vietnam_time()
     current_period = current_time.strftime('%Y-%m')

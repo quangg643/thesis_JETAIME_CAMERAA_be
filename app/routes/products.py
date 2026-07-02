@@ -29,35 +29,44 @@ def add_product():
           properties:
             name:
               type: string
-              description: Product name
               example: "Sony A7IV"
             brand:
               type: string
-              description: Brand name
               example: "Sony"
-            six_hour_price:
-              type: integer
-              default: 0
-            one_day_price:
-              type: integer
-              default: 0
-            two_day_price:
-              type: integer
-              default: 0
-            three_day_price:
-              type: integer
-              default: 0
-            additional_day_price:
-              type: integer
-              default: 0
-            additional_hour_price:
-              type: integer
-              default: 0
+            six_hour_price: {type: integer, default: 0}
+            one_day_price: {type: integer, default: 0}
+            two_day_price: {type: integer, default: 0}
+            three_day_price: {type: integer, default: 0}
+            additional_day_price: {type: integer, default: 0}
+            additional_hour_price: {type: integer, default: 0}
+            description: {type: string, default: ""}
     responses:
       201:
-        description: Product created successfully
+        description: Product created successfully along with computed stock profiles
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            product:
+              type: object
+              properties:
+                id: {type: integer}
+                name: {type: string}
+                brand: {type: string}
+                six_hour_price: {type: integer}
+                one_day_price: {type: integer}
+                two_day_price: {type: integer}
+                three_day_price: {type: integer}
+                additional_day_price: {type: integer}
+                additional_hour_price: {type: integer}
+                description: {type: string}
+                total_stock: {type: integer, example: 0}
+                available_stock: {type: integer, example: 0}
+                rented_stock: {type: integer, example: 0}
+                maintenance_stock: {type: integer, example: 0}
+                created_at: {type: string, format: date-time}
       400:
-        description: Missing required fields
+        description: Bad request / validation error
     """
     data = request.get_json()
 

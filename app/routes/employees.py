@@ -19,6 +19,8 @@ def offboard(id):
     ---
     tags:
       - Employees
+    security:
+      - cookieAuth: []
     parameters:
       - name: id
         in: path
@@ -27,9 +29,19 @@ def offboard(id):
         description: ID of the employee to offboard
     responses:
       200:
-        description: Employee status updated to OFFBOARDED
+        description: Employee status updated to OFFBOARDED successfully
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Employee John Doe status updated to OFFBOARDED."}
+            offboard_date: {type: string, format: date-time, example: "2026-03-30T14:35:00"}
       400:
         description: Invalid request (self-offboarding or already offboarded)
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "You cannot offboard yourself"}
       500:
         description: Database error
     """

@@ -206,7 +206,7 @@ def refresh():
 @jwt_required()
 def logout():
     """
-    Revoke Access Token
+    Log out the current user and revoke their access token
     ---
     tags:
       - Authentication
@@ -214,7 +214,17 @@ def logout():
       - cookieAuth: []
     responses:
       200:
-        description: Access token revoked
+        description: Access token revoked successfully
+        schema:
+          type: object
+          properties:
+            msg: {type: string, example: "Access token revoked successfully"}
+      500:
+        description: Database error / unexpected exception
+        schema:
+          type: object
+          properties:
+            message: {type: string, example: "Something went wrong"}
     """
     try:
         jti = get_jwt()["jti"]
@@ -228,31 +238,6 @@ def logout():
     except Exception:
         return jsonify({"message": "Something went wrong"}), 500
 
-@auth_bp.route('/logout-refresh', methods=['DELETE'])
-@jwt_required(refresh=True)
-def logout_refresh():
-    """
-    Revoke Refresh Token
-    ---
-    tags:
-      - Authentication
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Refresh token revoked
-    """ 
-    try:
-        jti = get_jwt()["jti"]
-        db.session.add(TokenBlocklist(jti=jti))
-        db.session.commit()
-
-        resp = jsonify({"msg": "Refresh token revoked successfully"})
-        unset_jwt_cookies(resp)
-        return resp, 200
-    except Exception:
-        db.session.rollback()
-        return jsonify({"message": "Something went wrong"}), 500
 
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()

@@ -36,10 +36,25 @@ def add_single_camera():
     responses:
       201:
         description: Camera created successfully
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Camera CAM-001 created successfully"}
       400:
-        description: Validation error (missing fields, too short/long, invalid characters)
+        description: Validation error (missing fields, invalid length/characters)
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: false}
+            error: {type: string, example: "Missing required properties"}
       409:
         description: Identifier already exists
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: false}
+            error: {type: string, example: "Camera identifier already exists"}
     """
 
     data = request.get_json()

@@ -8,7 +8,7 @@ from app.models import Rental, db, Customer
 
 customers_bp = Blueprint('customers', __name__)
 
-@customers_bp .route('/', methods=['GET'])
+@customers_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_all_customers():
     """
@@ -31,6 +31,7 @@ def get_all_customers():
         in: query
         type: integer
         default: 20
+        description: Number of items per page (maximum hard-capped at 100)
     responses:
       200:
         description: A paginated list of customers
@@ -48,8 +49,6 @@ def get_all_customers():
                   created_at: {type: string, format: date-time}
             total: {type: integer}
             pages: {type: integer}
-            current_page: {type: integer}
-            per_page: {type: integer}
     """
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
@@ -87,7 +86,7 @@ def get_all_customers():
     }), 200
 
 
-@customers_bp .route('/<int:id>', methods=['GET'])
+@customers_bp.route('/<int:id>', methods=['GET'])
 @jwt_required()
 def get_customer(id):
     """
@@ -264,13 +263,12 @@ def update_customer(id):
 @role_required([UserRole.MANAGER])
 def delete_customer(id):
     """
-    Delete a customer (Manager only)
+    Delete a customer profile
     ---
     tags:
       - Customers
     security:
       - cookieAuth: []
-    description: Deletion is only allowed if the customer has no active rentals and no unpaid fees.
     parameters:
       - name: id
         in: path
@@ -279,8 +277,18 @@ def delete_customer(id):
     responses:
       200:
         description: Customer deleted successfully
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Customer 'John Doe' (ID: 5) deleted successfully"}
       400:
         description: Cannot delete due to active rentals or unpaid fees
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: false}
+            error: {type: string, example: "Cannot delete customer: This customer currently has an active camera rental."}
       401:
         description: Unauthorized / Insufficient permissions
       404:

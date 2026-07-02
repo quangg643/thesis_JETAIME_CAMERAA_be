@@ -19,6 +19,68 @@ today_date = vn_now.date()
 @rental_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_rentals():
+    """
+    Get a filtered list of active or past camera lease transactions
+    ---
+    tags:
+      - Rentals
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: per_page
+        in: query
+        type: integer
+        default: 10
+      - name: search
+        in: query
+        type: string
+        description: Query by customer name, phone number, or camera identifier
+      - name: status
+        in: query
+        type: string
+        description: Filter by precise rental lifecycle state string enum
+      - name: camera
+        in: query
+        type: string
+        description: Explicit filtering keyword for camera model/product name
+      - name: start_date
+        in: query
+        type: string
+        description: Filter bookings starting after YYYY-MM-DD
+      - name: end_date
+        in: query
+        type: string
+        description: Filter bookings starting before YYYY-MM-DD
+    responses:
+      200:
+        description: Paginated search results object wrapping detailed items list
+        schema:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  customer_name: {type: string}
+                  customer_phone: {type: string}
+                  camera_identifier: {type: string}
+                  product_name: {type: string}
+                  order_status: {type: string, description: "Live enum state value string descriptor"}
+                  checkout_date: {type: string, format: date-time}
+                  expected_return_date: {type: string, format: date-time}
+                  actual_return_date: {type: string, format: date-time, nullable: true}
+                  initial_fee: {type: integer}
+                  late_fee: {type: integer}
+            total: {type: integer}
+            pages: {type: integer}
+            current_page: {type: integer}
+    """
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
     search_query = request.args.get('search')
@@ -180,41 +242,43 @@ def get_rental_by_id(rental_id):
 @role_required([UserRole.STAFF_ON])
 def create_rental():
     """
-    Create a new rental reservation
+    Initiate a new equipment lease record and dynamically process reservation security deposits
     ---
     tags:
       - Rentals
-    description: >
-      Creates a rental record and sets camera status to RESERVED. 
-      Automatically increments the employee's KPI (no_customer) if performed during their shift.
+    security:
+      - cookieAuth: []
     parameters:
-      - in: body
-        name: body
+      - name: body
+        in: body
         required: true
         schema:
           type: object
           required:
             - customer_id
             - camera_id
-            - start_time
-            - expected_return_time
-            - deposit_amount
-            - deposit_method
+            - expected_return_date
           properties:
-            customer_id: {type: integer}
-            camera_id: {type: integer}
-            start_time: {type: string, format: date-time, example: "2026-04-01T10:00:00Z"}
-            expected_return_time: {type: string, format: date-time, example: "2026-04-02T10:00:00Z"}
-            deposit_amount: {type: integer}
-            deposit_method: {type: string, enum: [cash, transfer]}
-            note: {type: string}
+            customer_id: {type: integer, example: 4}
+            camera_id: {type: integer, example: 12}
+            expected_return_date: {type: string, format: date-time, example: "2026-07-05T18:00:00"}
     responses:
       201:
-        description: Rental reserved successfully
+        description: Lease instance generated and associated dynamic KPIs calculated
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            rental_id: {type: integer}
+            initial_fee: {type: integer, example: 350000}
       400:
-        description: Invalid date range or camera not available
+        description: Target equipment unavailable, invalid return times, or parameter validations failed
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Camera is not available for rental"}
       404:
-        description: Customer or Camera not found
+        description: Associated customer, shift employee, or camera instance row not found
     """
     current_user_id = get_jwt_identity()
     data = request.get_json()
@@ -511,7 +575,12 @@ def delete_rental(rental_id):
       200:
         description: Rental deleted and KPI adjusted
       400:
-        description: Cannot delete (e.g. rental is already active)
+        description: Cannot delete rental because it is already active or completed
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Cannot delete rental"}
+            details: {type: string, example: "Only rentals with status 'PENDING_PICKUP' can be deleted."}
     """
     try:
         rental = Rental.query.get_or_404(rental_id)

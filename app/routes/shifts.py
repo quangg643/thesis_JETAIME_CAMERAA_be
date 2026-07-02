@@ -10,6 +10,48 @@ shifts_bp = Blueprint('shifts', __name__)
 
 @shifts_bp.route('/calendar', methods=['GET'])
 def get_calendar_matrix():
+    """
+    Compile a complete date-bounded grid matrix mapping shift types to employee assignments
+    ---
+    tags:
+      - Shift Schedules
+    parameters:
+      - name: start_date
+        in: query
+        type: string
+        required: true
+        description: Format YYYY-MM-DD
+      - name: end_date
+        in: query
+        type: string
+        required: true
+        description: Format YYYY-MM-DD
+      - name: query
+        in: query
+        type: string
+        description: Optional keyword search token matching employee name
+    responses:
+      200:
+        description: Calendar matrix layout categorized by ISO Date strings and shift name rows
+        schema:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: object
+              properties:
+                note: {type: string, example: "Delays expected due to bad weather"}
+                staff:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: {type: integer}
+                      name: {type: string}
+                      email: {type: string}
+      400:
+        description: Missing bounds or malformed date schemas
+    """
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     search_query = request.args.get('query', '').strip().lower() # Capture search token optional parameters
@@ -83,6 +125,45 @@ def get_calendar_matrix():
 # ==========================================================================
 @shifts_bp.route('/unassign', methods=['POST'])
 def unassign_employee():
+    """
+    Remove an employee assignment from a shift date
+    ---
+    tags:
+      - Shift Schedules
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - date
+            - shift_type
+            - employee_id
+          properties:
+            date: {type: string, example: "2026-07-01", description: "Format: YYYY-MM-DD"}
+            shift_type: {type: string, example: "Morning"}
+            employee_id: {type: integer, example: 5}
+    responses:
+      200:
+        description: Employee assignment successfully removed
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Assignment successfully removed."}
+      400:
+        description: Invalid date format
+      403:
+        description: Cannot modify past or locked rosters
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: false}
+            error: {type: string, example: "This shift assignment is locked and cannot be edited."}
+      404:
+        description: Shift assignment record not found
+    """
     data = request.json or {}
     date_str = data.get('date')
     shift_type = data.get('shift_type')  # e.g., 'morning', 'evening'
@@ -121,6 +202,53 @@ def unassign_employee():
 # ==========================================================================
 @shifts_bp.route('/assign', methods=['POST'])
 def assign_employee():
+    """
+    Assign an employee to a specific shift date
+    ---
+    tags:
+      - Shift Schedules
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - date
+            - shift_type
+            - employee_id
+          properties:
+            date: {type: string, example: "2026-07-01", description: "Format: YYYY-MM-DD"}
+            shift_type: {type: string, example: "Morning", description: "The unique shift name identifier"}
+            employee_id: {type: integer, example: 5}
+    responses:
+      200:
+        description: Employee successfully assigned to the shift
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Employee successfully assigned."}
+      400:
+        description: Invalid request parameters or malformed date format
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Invalid date format. Use YYYY-MM-DD"}
+      403:
+        description: Operation forbidden because the shift is locked or in the past
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: false}
+            error: {type: string, example: "This shift assignment is locked and cannot be edited."}
+      404:
+        description: Shift type or Employee record not found
+        schema:
+          type: object
+          properties:
+            error: {type: string, example: "Invalid shift type parameter"}
+    """
     data = request.json or {}
     date_str = data.get('date')
     shift_type = data.get('shift_type')
@@ -171,6 +299,45 @@ def assign_employee():
 # ==========================================================================
 @shifts_bp.route('/update-note', methods=['POST'])
 def update_shift_note():
+    """
+    Create or update an administrative note for a specific shift date
+    ---
+    tags:
+      - Shift Schedules
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - date
+            - shift_type
+            - note
+          properties:
+            date: {type: string, example: "2026-07-01", description: "Format: YYYY-MM-DD"}
+            shift_type: {type: string, example: "Morning"}
+            note: {type: string, example: "Delays expected due to bad weather"}
+    responses:
+      200:
+        description: Shift annotation note successfully updated
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: true}
+            message: {type: string, example: "Shift note updated successfully."}
+      400:
+        description: Missing note string values or invalid parameters
+      403:
+        description: Timeframe locked; historical shift notes are read-only
+        schema:
+          type: object
+          properties:
+            success: {type: boolean, example: false}
+            error: {type: string, example: "This shift assignment is locked and cannot be edited."}
+      404:
+        description: Specified shift configuration not found
+    """
     data = request.json or {}
     date_str = data.get('date')
     shift_type = data.get('shift_type')
@@ -181,7 +348,7 @@ def update_shift_note():
     
     is_editable, error_msg = verify_shift_is_editable(date_str, shift_type)
     if not is_editable:
-        return jsonify({"success": False, "error": error_msg}), 0, 403
+        return jsonify({"success": False, "error": error_msg}), 403
 
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
