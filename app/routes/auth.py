@@ -163,45 +163,6 @@ def login():
 
     return resp, 200
 
-@auth_bp.route('/refresh', methods=['POST'])
-@jwt_required(refresh=True)
-def refresh():
-    """
-    Refresh Access Token
-    ---
-    tags:
-      - Authentication
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Token refreshed
-      401:
-        description: Refresh token missing or invalid
-    """
-    current_user_id = get_jwt_identity()
-
-    user = Employee.query.get(current_user_id)
-    if not user:
-        return jsonify({'success': False, 'message': 'User not found'}), 401
-
-    payload = {
-        'id': user.id,
-        'role': user.role.value,
-        'name': user.name,
-        'email': user.email,
-    }
-
-    new_access_token = create_access_token(identity=str(current_user_id), additional_claims=payload)
-
-    resp = jsonify({"msg": "Token refreshed"})
-    set_access_cookies(resp, new_access_token)
-
-    return jsonify({
-        'success': True,
-        'access_token': new_access_token
-    }), 200
-
 @auth_bp.route('/logout', methods=['DELETE'])
 @jwt_required()
 def logout():
